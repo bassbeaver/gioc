@@ -3,11 +3,14 @@ package gioc
 import (
 	"reflect"
 	"fmt"
+	"sync"
 )
 
 type container struct {
 	factories map[string]interface{}
+	servicesMutex sync.RWMutex
 	services map[string]interface{}
+	taskManager *TaskManager
 }
 
 // Registers service factory to container. Parameter factory must be one of two types:
@@ -48,9 +51,8 @@ func (c *container) AddServiceAlias(existingAlias, newAlias string) *container {
 
 	c.factories[newAlias] = c.factories[existingAlias]
 
-	// Add new alias for already instantiated services
-	if _, serviceIsRegistered := c.services[existingAlias]; serviceIsRegistered {
-		c.services[newAlias] = c.services[existingAlias]
+	if service, serviceIsRegistered := c.getCachedService(existingAlias); serviceIsRegistered {
+		c.setCachedService(newAlias, service)
 	}
 
 	return c
@@ -61,10 +63,26 @@ func (c *container) AddServiceAliasByObject(serviceObj interface{}, newAlias str
 }
 
 func (c *container) GetByAlias(alias string) interface{} {
-	if service, serviceIsRegistered := c.services[alias]; serviceIsRegistered {
+	if service, serviceIsRegistered := c.getCachedService(alias); serviceIsRegistered {
 		return service
 	}
 
+	serviceCreationListener := make(chan interface{})
+	c.taskManager.AddTask(&TaskDefinition{
+		taskName: alias,
+		listener: serviceCreationListener,
+		perform: func() interface {} {
+			return c.instantiate(alias)
+		},
+	})
+	return <- serviceCreationListener
+}
+
+func (c *container) GetByObject(serviceObj interface{}) interface{} {
+	return c.GetByAlias(reflect.TypeOf(serviceObj).String())
+}
+
+func (c *container) instantiate(alias string) interface{} {
 	factory, factoryIsRegistered := c.factories[alias]
 	if !factoryIsRegistered {
 		panic(
@@ -104,7 +122,7 @@ func (c *container) GetByAlias(alias string) interface{} {
 			} else {
 				argument = getArgumentValueFromString(argumentType.Kind(), argumentDefinition)
 			}
-		// If factory is method of there are no data for current parameter - just get it from Container
+			// If factory is method of there are no data for current parameter - just get it from Container
 		} else {
 			argument = c.GetByAlias(argumentType.String())
 		}
@@ -113,13 +131,28 @@ func (c *container) GetByAlias(alias string) interface{} {
 	}
 
 	service := factoryMethodValue.Call(factoryInputArguments)[0].Interface()
-	c.services[alias] = service
+
+	// Save instantiated service to services hash-map
+	c.setCachedService(alias, service)
 
 	return service
 }
 
-func (c *container) GetByObject(serviceObj interface{}) interface{} {
-	return c.GetByAlias(reflect.TypeOf(serviceObj).String())
+func (c *container) setCachedService(alias string, service interface{}) {
+	c.servicesMutex.Lock()
+	defer c.servicesMutex.Unlock()
+	c.services[alias] = service
+}
+
+func (c *container) getCachedService(alias string) (interface{}, bool) {
+	c.servicesMutex.RLock()
+	defer c.servicesMutex.RUnlock()
+	service, serviceIsSet := c.services[alias]
+	return service, serviceIsSet
+}
+
+func (c *container) Close() {
+	c.taskManager.StopServe()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -128,7 +161,9 @@ func NewContainer() *container {
 	c := container{
 		factories: make(map[string]interface{}, 0),
 		services: make(map[string]interface{}, 0),
+		taskManager: NewTaskManager(),
 	}
+	c.taskManager.Serve()
 
 	return &c
 }
