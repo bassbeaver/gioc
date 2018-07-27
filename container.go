@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-type container struct {
+type Container struct {
 	factories map[string]interface{}
 	servicesMutex sync.RWMutex
 	services map[string]interface{}
-	taskManager *TaskManager
+	taskManager *taskManager
 }
 
-// Registers service factory to container. Parameter factory must be one of two types:
+// Registers service factory to Container. Parameter factory must be one of two types:
 // 1. Factory method (function). Function with one out parameter - pointer to new instance of service
 // 2. Instance of Factory struct, where Create attribute is proper factory method (see p.1)
-func (c *container) RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}) *container {
+func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}) *Container {
 	factoryType := reflect.TypeOf(factory)
 
 	if factoryType.Kind() == reflect.Func {
@@ -38,13 +38,13 @@ func (c *container) RegisterServiceFactoryByAlias(serviceAlias string, factory i
 	return c
 }
 
-func (c *container) RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}) *container {
+func (c *Container) RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}) *Container {
 	serviceAlias := reflect.TypeOf(serviceObj).String()
 	c.RegisterServiceFactoryByAlias(serviceAlias, factory)
 	return c
 }
 
-func (c *container) AddServiceAlias(existingAlias, newAlias string) *container {
+func (c *Container) AddServiceAlias(existingAlias, newAlias string) *Container {
 	if _, factoryIsRegistered := c.factories[existingAlias]; !factoryIsRegistered {
 		return c
 	}
@@ -58,17 +58,17 @@ func (c *container) AddServiceAlias(existingAlias, newAlias string) *container {
 	return c
 }
 
-func (c *container) AddServiceAliasByObject(serviceObj interface{}, newAlias string) *container {
+func (c *Container) AddServiceAliasByObject(serviceObj interface{}, newAlias string) *Container {
 	return c.AddServiceAlias(reflect.TypeOf(serviceObj).String(), newAlias)
 }
 
-func (c *container) GetByAlias(alias string) interface{} {
+func (c *Container) GetByAlias(alias string) interface{} {
 	if service, serviceIsRegistered := c.getCachedService(alias); serviceIsRegistered {
 		return service
 	}
 
 	serviceCreationListener := make(chan interface{})
-	c.taskManager.AddTask(&TaskDefinition{
+	c.taskManager.addTask(&taskDefinition{
 		taskName: alias,
 		listener: serviceCreationListener,
 		perform: func() interface {} {
@@ -78,11 +78,11 @@ func (c *container) GetByAlias(alias string) interface{} {
 	return <- serviceCreationListener
 }
 
-func (c *container) GetByObject(serviceObj interface{}) interface{} {
+func (c *Container) GetByObject(serviceObj interface{}) interface{} {
 	return c.GetByAlias(reflect.TypeOf(serviceObj).String())
 }
 
-func (c *container) instantiate(alias string) interface{} {
+func (c *Container) instantiate(alias string) interface{} {
 	factory, factoryIsRegistered := c.factories[alias]
 	if !factoryIsRegistered {
 		panic(
@@ -138,32 +138,32 @@ func (c *container) instantiate(alias string) interface{} {
 	return service
 }
 
-func (c *container) setCachedService(alias string, service interface{}) {
+func (c *Container) setCachedService(alias string, service interface{}) {
 	c.servicesMutex.Lock()
 	defer c.servicesMutex.Unlock()
 	c.services[alias] = service
 }
 
-func (c *container) getCachedService(alias string) (interface{}, bool) {
+func (c *Container) getCachedService(alias string) (interface{}, bool) {
 	c.servicesMutex.RLock()
 	defer c.servicesMutex.RUnlock()
 	service, serviceIsSet := c.services[alias]
 	return service, serviceIsSet
 }
 
-func (c *container) Close() {
-	c.taskManager.StopServe()
+func (c *Container) Close() {
+	c.taskManager.stopServe()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
-func NewContainer() *container {
-	c := container{
+func NewContainer() *Container {
+	c := Container{
 		factories: make(map[string]interface{}, 0),
 		services: make(map[string]interface{}, 0),
 		taskManager: NewTaskManager(),
 	}
-	c.taskManager.Serve()
+	c.taskManager.serve()
 
 	return &c
 }

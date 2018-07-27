@@ -4,20 +4,20 @@ import (
 	"sync"
 )
 
-type TaskManager struct {
-	addTaskChan chan *TaskDefinition
-	removeTaskChan chan *TaskDefinition
+type taskManager struct {
+	addTaskChan chan *taskDefinition
+	removeTaskChan chan *taskDefinition
 	stopServeChan chan bool
 
 	onServeMutex sync.Mutex
 	onServe bool
 }
 
-func (tm *TaskManager) AddTask(task *TaskDefinition) {
+func (tm *taskManager) addTask(task *taskDefinition) {
 	tm.addTaskChan <- task
 }
 
-func (tm *TaskManager) Serve() {
+func (tm *taskManager) serve() {
 	tm.onServeMutex.Lock()
 	defer tm.onServeMutex.Unlock()
 
@@ -57,7 +57,7 @@ func (tm *TaskManager) Serve() {
 			case processedTask := <- tm.removeTaskChan:
 				runningTasksListeners.delete(processedTask.taskName)
 			case <- tm.stopServeChan:
-				// This stopServeChan channel used to stop this goroutine after StopServe() call if no task are running
+				// This stopServeChan channel used to stop this goroutine after stopServe() call if no task are running
 				tm.onServe = false
 			}
 
@@ -68,11 +68,11 @@ func (tm *TaskManager) Serve() {
 	}()
 }
 
-func (tm *TaskManager) StopServe() {
+func (tm *taskManager) stopServe() {
 	tm.stopServeChan <- true
 }
 
-type TaskDefinition struct {
+type taskDefinition struct {
 	taskName string
 	listener chan interface{}
 	perform func() interface{}
@@ -119,10 +119,10 @@ func newRunningTasksListenersMap() *runningTasksListenersMap {
 	}
 }
 
-func NewTaskManager() *TaskManager {
-	return &TaskManager{
-		addTaskChan: make(chan *TaskDefinition),
-		removeTaskChan: make(chan *TaskDefinition),
+func NewTaskManager() *taskManager {
+	return &taskManager{
+		addTaskChan: make(chan *taskDefinition),
+		removeTaskChan: make(chan *taskDefinition),
 		stopServeChan: make(chan bool),
 		onServe: true,
 	}
