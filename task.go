@@ -119,7 +119,7 @@ func newRunningTasksListenersMap() *runningTasksListenersMap {
 	}
 }
 
-func NewTaskManager() *taskManager {
+func newTaskManager() *taskManager {
 	return &taskManager{
 		addTaskChan: make(chan *taskDefinition),
 		removeTaskChan: make(chan *taskDefinition),

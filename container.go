@@ -7,33 +7,39 @@ import (
 )
 
 type Container struct {
-	factories map[string]interface{}
-	servicesMutex sync.RWMutex
-	services map[string]interface{}
+	registryMutex   sync.RWMutex
+	registry        map[string]*registryEntry
+	servicesCounter int
 	taskManager *taskManager
+}
+
+type registryEntry struct {
+	factory *Factory
+	cachedService interface{}
+	id int
 }
 
 // Registers service factory to Container. Parameter factory must be one of two types:
 // 1. Factory method (function). Function with one out parameter - pointer to new instance of service
 // 2. Instance of Factory struct, where Create attribute is proper factory method (see p.1)
 func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}) *Container {
-	factoryType := reflect.TypeOf(factory)
+	var factoryObj *Factory
 
-	if factoryType.Kind() == reflect.Func {
-		checkFactoryMethod(factory)
-	} else if factoryType == reflect.TypeOf(Factory{}) {
-		checkFactoryMethod(factory.(Factory).Create)
+	if reflect.TypeOf(factory) == reflect.TypeOf(Factory{}) {
+		castedFactory := factory.(Factory)
+		factoryObj = &castedFactory
 	} else {
-		panic(
-			fmt.Sprintf(
-				"Invalid kind of 'factory' parameter: %s. Parameter 'factory' must be a function or %s instance",
-				reflect.TypeOf(factory).Kind().String(),
-				reflect.TypeOf(Factory{}).String(),
-			),
-		)
+		factoryObj = &Factory{
+			Create: factory,
+		}
 	}
 
-	c.factories[serviceAlias] = factory
+	checkFactoryMethod(factoryObj.Create)
+
+	c.writeRegistry(serviceAlias, &registryEntry{
+		factory: factoryObj,
+		cachedService: nil,
+	})
 
 	return c
 }
@@ -41,70 +47,58 @@ func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory i
 func (c *Container) RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}) *Container {
 	serviceAlias := reflect.TypeOf(serviceObj).String()
 	c.RegisterServiceFactoryByAlias(serviceAlias, factory)
-	return c
-}
-
-func (c *Container) AddServiceAlias(existingAlias, newAlias string) *Container {
-	if _, factoryIsRegistered := c.factories[existingAlias]; !factoryIsRegistered {
-		return c
-	}
-
-	c.factories[newAlias] = c.factories[existingAlias]
-
-	if service, serviceIsRegistered := c.getCachedService(existingAlias); serviceIsRegistered {
-		c.setCachedService(newAlias, service)
-	}
 
 	return c
 }
 
-func (c *Container) AddServiceAliasByObject(serviceObj interface{}, newAlias string) *Container {
-	return c.AddServiceAlias(reflect.TypeOf(serviceObj).String(), newAlias)
+func (c *Container) AddServiceAlias(existingAlias, newAlias string) bool {
+	if serviceEntry := c.readRegistry(existingAlias); nil != serviceEntry {
+		c.writeRegistry(newAlias, serviceEntry)
+		return true
+	}
+	return false
+}
+
+func (c *Container) AddServiceAliasByObject(serviceObj interface{}, newAlias string) bool {
+	serviceName := reflect.TypeOf(serviceObj).String()
+
+	return c.AddServiceAlias(serviceName, newAlias)
 }
 
 func (c *Container) GetByAlias(alias string) interface{} {
-	if service, serviceIsRegistered := c.getCachedService(alias); serviceIsRegistered {
-		return service
+	registryEntry := c.readRegistry(alias)
+	if nil == registryEntry {
+		panic(
+			fmt.Sprintf("Failed to instantiate service '%s'. Factory for service '%s' not registered", alias, alias),
+		)
+	}
+
+	if nil != registryEntry.cachedService {
+		return registryEntry.cachedService
 	}
 
 	serviceCreationListener := make(chan interface{})
 	c.taskManager.addTask(&taskDefinition{
-		taskName: alias,
+		taskName: fmt.Sprintf("service_%d", registryEntry.id),
 		listener: serviceCreationListener,
 		perform: func() interface {} {
-			return c.instantiate(alias)
+			return c.instantiate(registryEntry.factory)
 		},
 	})
-	return <- serviceCreationListener
+
+	service := <- serviceCreationListener
+
+	c.addServiceToCache(alias, service)
+
+	return service
 }
 
 func (c *Container) GetByObject(serviceObj interface{}) interface{} {
 	return c.GetByAlias(reflect.TypeOf(serviceObj).String())
 }
 
-func (c *Container) instantiate(alias string) interface{} {
-	factory, factoryIsRegistered := c.factories[alias]
-	if !factoryIsRegistered {
-		panic(
-			fmt.Sprintf(
-				"Failed to instantiate '%s'. Factory for service '%s' not registered",
-				alias,
-				alias,
-			),
-		)
-	}
-
-	var factoryIsFunction bool
-	var factoryMethod interface{}
-	if reflect.TypeOf(factory) == reflect.TypeOf(Factory{}) {
-		factoryIsFunction = false
-		factoryMethod = factory.(Factory).Create
-	} else {
-		factoryIsFunction = true
-		factoryMethod = factory
-	}
-
-	factoryMethodValue := reflect.ValueOf(factoryMethod)
+func (c *Container) instantiate(factory *Factory) interface{} {
+	factoryMethodValue := reflect.ValueOf(factory.Create)
 
 	factoryMethodType := factoryMethodValue.Type()
 	factoryInputArguments := make([]reflect.Value, factoryMethodType.NumIn())
@@ -113,16 +107,16 @@ func (c *Container) instantiate(alias string) interface{} {
 
 		argumentType := factoryMethodType.In(argumentNum)
 
-		// If factory is Factory instance - check for Arguments data in it
-		if !factoryIsFunction && argumentNum < len(factory.(Factory).Arguments) {
-			argumentDefinition := factory.(Factory).Arguments[argumentNum]
+		// If there is argument data for current parameter - process it
+		if argumentNum < len(factory.Arguments) {
+			argumentDefinition := factory.Arguments[argumentNum]
 			// Sign @ indicates that it is service alias
 			if "@" == argumentDefinition[:1] {
 				argument = c.GetByAlias(argumentDefinition[1:])
 			} else {
 				argument = getArgumentValueFromString(argumentType.Kind(), argumentDefinition)
 			}
-			// If factory is method of there are no data for current parameter - just get it from Container
+		// If there is no data for current parameter - just get it from Container
 		} else {
 			argument = c.GetByAlias(argumentType.String())
 		}
@@ -132,23 +126,29 @@ func (c *Container) instantiate(alias string) interface{} {
 
 	service := factoryMethodValue.Call(factoryInputArguments)[0].Interface()
 
-	// Save instantiated service to services hash-map
-	c.setCachedService(alias, service)
-
 	return service
 }
 
-func (c *Container) setCachedService(alias string, service interface{}) {
-	c.servicesMutex.Lock()
-	defer c.servicesMutex.Unlock()
-	c.services[alias] = service
+func (c *Container) writeRegistry(alias string, entry *registryEntry) {
+	c.registryMutex.Lock()
+	defer c.registryMutex.Unlock()
+
+	c.servicesCounter++
+	entry.id = c.servicesCounter
+	c.registry[alias] = entry
 }
 
-func (c *Container) getCachedService(alias string) (interface{}, bool) {
-	c.servicesMutex.RLock()
-	defer c.servicesMutex.RUnlock()
-	service, serviceIsSet := c.services[alias]
-	return service, serviceIsSet
+func (c *Container) addServiceToCache(alias string, service interface{}) {
+	c.registryMutex.Lock()
+	defer c.registryMutex.Unlock()
+	c.registry[alias].cachedService = service
+}
+
+func (c *Container) readRegistry(alias string) *registryEntry {
+	c.registryMutex.RLock()
+	defer c.registryMutex.RUnlock()
+
+	return c.registry[alias]
 }
 
 func (c *Container) Close() {
@@ -159,9 +159,8 @@ func (c *Container) Close() {
 
 func NewContainer() *Container {
 	c := Container{
-		factories: make(map[string]interface{}, 0),
-		services: make(map[string]interface{}, 0),
-		taskManager: NewTaskManager(),
+		registry:    make(map[string]*registryEntry, 0),
+		taskManager: newTaskManager(),
 	}
 	c.taskManager.serve()
 

@@ -101,6 +101,7 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 	type Service2 struct {
 		F1 string
 		S1 *Service1
+		F2 int
 	}
 
 	c := NewContainer()
@@ -123,13 +124,21 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 			},
 			Arguments: []string{"field 2-1", "@service1alias"},
 		},
-	).AddServiceAliasByObject(
-		(*Service2)(nil),
-		"service2alias",
-	).AddServiceAlias(
-		"service2alias",
-		"service2alias2",
 	)
+
+	var aliasAdded bool
+
+	aliasAdded = c.AddServiceAliasByObject((*Service2)(nil), "service2alias")
+	if !aliasAdded {
+		t.Errorf("Failed to add service alias by object")
+		return
+	}
+
+	aliasAdded = c.AddServiceAlias("service2alias", "service2alias2")
+	if !aliasAdded {
+		t.Errorf("Failed to add service alias")
+		return
+	}
 
 	s2 := c.GetByObject((*Service2)(nil)).(*Service2)
 
@@ -147,6 +156,58 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 	s2 = c.GetByAlias("service2alias2").(*Service2)
 	if !reflect.DeepEqual(s2, referenceService2) {
 		t.Errorf("Wrong service got by second alias. Wanted: %v with S1: %v. Instantiated: %v with S1: %v", referenceService2, referenceService2.S1, s2, s2.S1)
+	}
+}
+
+func TestGetByAlias(t *testing.T) {
+	type Service1 struct {
+		F1 int
+	}
+
+	factoryCalled := 0
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByObject(
+		(*Service1)(nil),
+		func() *Service1 {
+			factoryCalled++
+			return &Service1{F1: 1,}
+		},
+	)
+
+	var aliasAdded bool
+
+	aliasAdded = c.AddServiceAliasByObject((*Service1)(nil), "service1alias")
+	if !aliasAdded {
+		t.Errorf("Failed to add service alias by object")
+		return
+	}
+
+	aliasAdded = c.AddServiceAlias("service1alias", "service1alias2")
+	if !aliasAdded {
+		t.Errorf("Failed to add service alias")
+		return
+	}
+
+
+	gotByObj := c.GetByObject((*Service1)(nil)).(*Service1)
+	gotByAlias1 := c.GetByAlias("service1alias").(*Service1)
+	gotByAlias2 := c.GetByAlias("service1alias2").(*Service1)
+
+	gotByObj.F1 = 2
+	if gotByObj.F1 != gotByAlias1.F1 || gotByObj.F1 != gotByAlias2.F1 || gotByAlias1.F1 != gotByAlias2.F1 || factoryCalled != 1 {
+		t.Errorf(
+			"Get by alias instantiated different instances. \n"+
+			" gotByObj = %+v \n"+
+			" gotByAlias1 = %+v \n"+
+			" gotByAlias2 = %+v \n"+
+			" Factory called %d times",
+			gotByObj,
+			gotByAlias1,
+			gotByAlias2,
+			factoryCalled,
+		)
 	}
 }
 
