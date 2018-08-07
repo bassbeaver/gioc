@@ -14,9 +14,9 @@ func checkFactoryMethod(factoryMethod interface{}) {
 	}
 
 	// factory method must return only one parameter - pointer to new service instance
-	if factoryMethodType.NumOut() > 1 {
+	if factoryMethodType.NumOut() != 1 {
 		panic("Factory must return only one parameter")
-	} else if factoryMethodType.Out(0).Kind() != reflect.Ptr {
+	} else if factoryMethodType.Out(0).Kind() != reflect.Ptr && factoryMethodType.Out(0).Kind() != reflect.Interface {
 		panic("Factory must return pointer")
 	}
 }

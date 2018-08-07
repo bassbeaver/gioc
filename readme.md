@@ -68,16 +68,22 @@ To create container you should use `gioc.NewContainer()` method.
 To register a service factory you can use next methods of Container:
  
 ```
-RegisterServiceFactoryByAlias(serviceAlias string, factory interface{})
+RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}, enableCaching bool)
 ```
-Where `serviceAlias` is string alias (name) which will be used to retrieve this service from container
-and `factory` is the factory which knows how to create that service (see [Factory](#factory)).
+Where:
+* `serviceAlias` is string alias (name) which will be used to retrieve this service from container
+* `factory` is the factory which knows how to create that service (see [Factory](#factory)).
+* `enableCaching` flag to control service caching after instantiation. If `enableCaching = true` - Container
+will instantiate this service only once, and save instantiated instance to cache.
+For all further requests (`GetByAlias` or `GetByObject` calls) Container will return cached service. 
+If If `enableCaching = false` - Container will instantiate service for every request (`GetByAlias` or `GetByObject` call). 
 
 ```
-RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{})
+RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}, enableCaching bool)
 ```
-Where `serviceObj` is instance of type of service (really, it should be a pointer to that type) 
-and `factory` is the factory which knows how to create that service (see [Factory](#factory)).
+Where:
+* `serviceObj` is instance of type of service (really, it should be a pointer to that type) 
+* `factory` and `enableCaching` - see `RegisterServiceFactoryByAlias`
 
 Service can have multiple aliases. To add new alias for registered service you can use:
 ```
@@ -94,8 +100,6 @@ GetByObject(serviceObj interface{}) interface{}
 
 For now all instantiated services are cached, so for the first call of `GetByAlias` or `GetByObject` service is instantiated
 and putted into cache and for every next call you will get service from cache.
-
-**Notice:** Rules for controlling that cache (to disable caching and running service instantiation every time) will be added in future releases.
 
 ##### Examples:
 
@@ -115,6 +119,7 @@ container.RegisterServiceFactoryByAlias(
     func() *Service {
         return &Service{Field1: "Field1", Field2: 5,}
     },
+    true,
 )
 
 service := container.GetByAlias("service").(*Service)
@@ -139,6 +144,7 @@ container.RegisterServiceFactoryByObject(
         },
         Arguments: []string{"field 1", "5"},
     },
+    true,
 )
 
 service := container.GetByObject((*Service)(nil)).(*Service)
@@ -167,11 +173,13 @@ container.RegisterServiceFactoryByObject(
     func() *Service1 {
         return &Service1{Field1: "Field1-1", Field2: 5,}
     },
+    true,
 ).RegisterServiceFactoryByObject(
     (*Service2)(nil),
     func(s1 *Service1) *Service2 {
         return &Service2{Field1: "Field2-1", ServiceInstance1: s1,}
     },
+    true,
 ).AddServiceAliasByObject((*Service2)(nil), "service2")
 
 service2 := container.GetByObject((*Service2)(nil)).(*Service2)
@@ -202,11 +210,13 @@ container.RegisterServiceFactoryByObject(
     func() *Service1 {
         return &Service1{Field1: "Some value", Field2: 0,}
     },
+    true,
 ).RegisterServiceFactoryByAlias(
     "anotherService1",
     func() *Service1 {
         return &Service1{Field1: "Field1-1", Field2: 5,}
     },
+    true,
 ).RegisterServiceFactoryByObject(
     (*Service2)(nil),
     Factory {
@@ -215,6 +225,7 @@ container.RegisterServiceFactoryByObject(
         },
         Arguments: []string{"field 2-1", "@anotherService1"},
     },
+    true,
 )
 
 service2 := container.GetByObject((*Service2)(nil)).(*Service2)

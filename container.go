@@ -15,6 +15,7 @@ type Container struct {
 
 type registryEntry struct {
 	factory *Factory
+	cachingEnabled bool
 	cachedService interface{}
 	id int
 }
@@ -22,7 +23,7 @@ type registryEntry struct {
 // Registers service factory to Container. Parameter factory must be one of two types:
 // 1. Factory method (function). Function with one out parameter - pointer to new instance of service
 // 2. Instance of Factory struct, where Create attribute is proper factory method (see p.1)
-func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}) *Container {
+func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory interface{}, enableCaching bool) *Container {
 	var factoryObj *Factory
 
 	if reflect.TypeOf(factory) == reflect.TypeOf(Factory{}) {
@@ -38,15 +39,16 @@ func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory i
 
 	c.writeRegistry(serviceAlias, &registryEntry{
 		factory: factoryObj,
+		cachingEnabled: enableCaching,
 		cachedService: nil,
 	})
 
 	return c
 }
 
-func (c *Container) RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}) *Container {
+func (c *Container) RegisterServiceFactoryByObject(serviceObj interface{}, factory interface{}, enableCaching bool) *Container {
 	serviceAlias := reflect.TypeOf(serviceObj).String()
-	c.RegisterServiceFactoryByAlias(serviceAlias, factory)
+	c.RegisterServiceFactoryByAlias(serviceAlias, factory, enableCaching)
 
 	return c
 }
@@ -88,7 +90,9 @@ func (c *Container) GetByAlias(alias string) interface{} {
 
 	service := <- serviceCreationListener
 
-	c.addServiceToCache(alias, service)
+	if registryEntry.cachingEnabled {
+		c.addServiceToCache(alias, service)
+	}
 
 	return service
 }

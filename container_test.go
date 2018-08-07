@@ -24,6 +24,7 @@ func TestGetSimpleServiceByFactoryMethod(t *testing.T) {
 		func() *Service {
 			return &Service{F1: "Field1", F2: 5,}
 		},
+		true,
 	)
 
 	s := c.GetByAlias(serviceAlias).(*Service)
@@ -52,6 +53,7 @@ func TestGetSimpleServiceByFactory(t *testing.T) {
 			},
 			Arguments: []string{"field 1", "6"},
 		},
+		true,
 	)
 
 	s := c.GetByAlias(serviceAlias).(*Service)
@@ -78,11 +80,13 @@ func TestGetDependentService(t *testing.T) {
 		func() *Service1 {
 			return &Service1{F1: "Field1-1", F2: 5,}
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		func(s1 *Service1) *Service2 {
 			return &Service2{F1: "Field2-1", S1: s1,}
 		},
+		true,
 	)
 
 	s2 := c.GetByObject((*Service2)(nil)).(*Service2)
@@ -111,11 +115,13 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 		func() *Service1 {
 			return &Service1{F1: "Field1-1", F2: 5,}
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service1)(nil),
 		func() *Service1 {
 			return &Service1{F1: "Some value", F2: 0,}
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		Factory {
@@ -124,6 +130,7 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 			},
 			Arguments: []string{"field 2-1", "@service1alias"},
 		},
+		true,
 	)
 
 	var aliasAdded bool
@@ -174,6 +181,7 @@ func TestGetByAlias(t *testing.T) {
 			factoryCalled++
 			return &Service1{F1: 1,}
 		},
+		true,
 	)
 
 	var aliasAdded bool
@@ -207,6 +215,68 @@ func TestGetByAlias(t *testing.T) {
 			gotByAlias1,
 			gotByAlias2,
 			factoryCalled,
+		)
+	}
+}
+
+func TestCaching(t *testing.T) {
+	type Service1 struct {
+		F1 string
+		F2 int
+	}
+	type Service2 struct {
+		F1 string
+		S1 *Service1
+		F2 int
+	}
+
+	var s1FactoryCalled, s2FactoryCalled1, s2FactoryCalled2 int
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByAlias(
+		"service1alias",
+		func() *Service1 {
+			s1FactoryCalled++
+			return &Service1{F1: "Field1-1", F2: 5,}
+		},
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Service1)(nil),
+		func() *Service1 {
+			s2FactoryCalled1++
+			return &Service1{F1: "Some value", F2: 0,}
+		},
+		false,
+	).RegisterServiceFactoryByObject(
+		(*Service2)(nil),
+		Factory {
+			Create: func(f1 string, s1 *Service1) *Service2 {
+				s2FactoryCalled2++
+				return &Service2{F1: f1, S1: s1,}
+			},
+			Arguments: []string{"field 2-1", "@service1alias"},
+		},
+		true,
+	)
+
+	maxIterations := 5
+	for i := 0; i < maxIterations; i++ {
+		c.GetByAlias("service1alias")
+		c.GetByObject((*Service1)(nil))
+		c.GetByObject((*Service2)(nil))
+	}
+
+	s1FactoryCalledExpected := 1
+	s2FactoryCalled2Expected := 1
+	if s1FactoryCalled != s1FactoryCalledExpected || s2FactoryCalled1 != maxIterations || s2FactoryCalled2 != s2FactoryCalled2Expected {
+		t.Errorf(
+			"factory1 called %d, expected %d \n"+
+			"factory2 called %d, expected %d \n"+
+			"factory3 called %d, expected %d \n",
+			s1FactoryCalled, s1FactoryCalledExpected,
+			s2FactoryCalled1, maxIterations,
+			s2FactoryCalled2, s2FactoryCalled2Expected,
 		)
 	}
 }
@@ -250,18 +320,21 @@ func TestConcurrentTreeDependency(t *testing.T) {
 			factoriesRunsChan <- "service1"
 			return &Service1{F1: "Field1-1", F2: 5,}
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		func(s1 *Service1) *Service2 {
 			factoriesRunsChan <- "service2"
 			return &Service2{F1: "Field2-1", S1: s1,}
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service3)(nil),
 		func(s1 *Service1) *Service3 {
 			factoriesRunsChan <- "service3"
 			return &Service3{F1: "Field3-1", S1: s1,}
 		},
+		true,
 	)
 
 	var s2 *Service2
@@ -339,6 +412,7 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 			},
 			Arguments: []string{"field 1-1", "123"},
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		Factory {
@@ -348,6 +422,7 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 			},
 			Arguments: []string{"field 2-1",},
 		},
+		true,
 	).RegisterServiceFactoryByObject(
 		(*Service3)(nil),
 		Factory {
@@ -357,6 +432,7 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 			},
 			Arguments: []string{"field 3-1",},
 		},
+		true,
 	)
 
 	referenceService1 := &Service1{F1: "field 1-1", F2: 123,}
