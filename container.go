@@ -1,8 +1,8 @@
 package gioc
 
 import (
-	"reflect"
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -10,14 +10,15 @@ type Container struct {
 	registryMutex   sync.RWMutex
 	registry        map[string]*registryEntry
 	servicesCounter int
-	taskManager *taskManager
+	taskManager     *taskManager
+	cyclesChecked   bool
 }
 
 type registryEntry struct {
-	factory *Factory
+	factory        *Factory
 	cachingEnabled bool
-	cachedService interface{}
-	id int
+	cachedService  interface{}
+	id             int
 }
 
 // Registers service factory to Container. Parameter factory must be one of two types:
@@ -38,9 +39,9 @@ func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory i
 	checkFactoryMethod(factoryObj.Create)
 
 	c.writeRegistry(serviceAlias, &registryEntry{
-		factory: factoryObj,
+		factory:        factoryObj,
 		cachingEnabled: enableCaching,
-		cachedService: nil,
+		cachedService:  nil,
 	})
 
 	return c
@@ -68,6 +69,12 @@ func (c *Container) AddServiceAliasByObject(serviceObj interface{}, newAlias str
 }
 
 func (c *Container) GetByAlias(alias string) interface{} {
+	if !c.cyclesChecked {
+		if noCycles, cycledService := c.CheckCycles(); !noCycles {
+			panic("Service " + cycledService + " has circular dependencies")
+		}
+	}
+
 	registryEntry := c.readRegistry(alias)
 	if nil == registryEntry {
 		panic(
@@ -83,12 +90,12 @@ func (c *Container) GetByAlias(alias string) interface{} {
 	c.taskManager.addTask(&taskDefinition{
 		taskName: fmt.Sprintf("service_%d", registryEntry.id),
 		listener: serviceCreationListener,
-		perform: func() interface {} {
+		perform: func() interface{} {
 			return c.instantiate(registryEntry.factory)
 		},
 	})
 
-	service := <- serviceCreationListener
+	service := <-serviceCreationListener
 
 	if registryEntry.cachingEnabled {
 		c.addServiceToCache(alias, service)
@@ -120,7 +127,7 @@ func (c *Container) instantiate(factory *Factory) interface{} {
 			} else {
 				argument = getArgumentValueFromString(argumentType.Kind(), argumentDefinition)
 			}
-		// If there is no data for current parameter - just get it from Container
+			// If there is no data for current parameter - just get it from Container
 		} else {
 			argument = c.GetByAlias(argumentType.String())
 		}
@@ -155,6 +162,18 @@ func (c *Container) readRegistry(alias string) *registryEntry {
 	return c.registry[alias]
 }
 
+// Checks all registered services for dependency cycles.
+// First returning parameter is flag showing cycle presence - true - no cycles, false - cycles detected
+// Second returning parameter contains name of service with detected dependency cycle. If no cycles detected it is empty string
+func (c *Container) CheckCycles() (bool, string) {
+	noCycles, cycledService := checkCyclesForContainer(c)
+	if noCycles {
+		c.cyclesChecked = true
+	}
+
+	return noCycles, cycledService
+}
+
 func (c *Container) Close() {
 	c.taskManager.stopServe()
 }
@@ -163,8 +182,9 @@ func (c *Container) Close() {
 
 func NewContainer() *Container {
 	c := Container{
-		registry:    make(map[string]*registryEntry, 0),
-		taskManager: newTaskManager(),
+		registry:      make(map[string]*registryEntry, 0),
+		taskManager:   newTaskManager(),
+		cyclesChecked: false,
 	}
 	c.taskManager.serve()
 

@@ -101,6 +101,18 @@ GetByObject(serviceObj interface{}) interface{}
 For now all instantiated services are cached, so for the first call of `GetByAlias` or `GetByObject` service is instantiated
 and putted into cache and for every next call you will get service from cache.
 
+##### Dependency cycle detection
+
+It is important to avoid cycles in service dependencies. Container has CheckCycles() method to check dependency cycles.
+
+First returning parameter of CheckCycles() is a flag showing cycle presence: true for "no cycles", false for "cycles detected". 
+
+Second returning parameter of CheckCycles() contains name of service with detected dependency cycle, if no cycles detected it is empty string.
+
+You can run this check manually or Container will run it automatically at first attempt of service retrieval.
+In case of automatic run panic will be thrown in case if cycle detected. 
+
+
 ##### Examples:
 
 ###### Simple service with function factory

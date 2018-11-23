@@ -1,12 +1,12 @@
 package gioc
 
 import (
-	"testing"
-	"reflect"
-	"time"
-	"sync"
-	"math/rand"
 	"fmt"
+	"math/rand"
+	"reflect"
+	"sync"
+	"testing"
+	"time"
 )
 
 func TestGetSimpleServiceByFactoryMethod(t *testing.T) {
@@ -22,14 +22,14 @@ func TestGetSimpleServiceByFactoryMethod(t *testing.T) {
 	c.RegisterServiceFactoryByAlias(
 		serviceAlias,
 		func() *Service {
-			return &Service{F1: "Field1", F2: 5,}
+			return &Service{F1: "Field1", F2: 5}
 		},
 		true,
 	)
 
 	s := c.GetByAlias(serviceAlias).(*Service)
 
-	referenceService := &Service{F1: "Field1", F2: 5,}
+	referenceService := &Service{F1: "Field1", F2: 5}
 	if !reflect.DeepEqual(s, referenceService) {
 		t.Errorf("Wrong service instanstiated. Wanted: %v. Instantiated: %v", referenceService, s)
 	}
@@ -47,9 +47,9 @@ func TestGetSimpleServiceByFactory(t *testing.T) {
 	defer c.Close()
 	c.RegisterServiceFactoryByAlias(
 		serviceAlias,
-		Factory {
+		Factory{
 			Create: func(f1 string, f2 int) *Service {
-				return &Service{F1: f1, F2: f2,}
+				return &Service{F1: f1, F2: f2}
 			},
 			Arguments: []string{"field 1", "6"},
 		},
@@ -57,7 +57,7 @@ func TestGetSimpleServiceByFactory(t *testing.T) {
 	)
 
 	s := c.GetByAlias(serviceAlias).(*Service)
-	referenceService := &Service{F1: "field 1", F2: 6,}
+	referenceService := &Service{F1: "field 1", F2: 6}
 	if !reflect.DeepEqual(s, referenceService) {
 		t.Errorf("Wrong service instanstiated. Wanted: %v. Instantiated: %v", referenceService, s)
 	}
@@ -78,20 +78,20 @@ func TestGetDependentService(t *testing.T) {
 	c.RegisterServiceFactoryByObject(
 		(*Service1)(nil),
 		func() *Service1 {
-			return &Service1{F1: "Field1-1", F2: 5,}
+			return &Service1{F1: "Field1-1", F2: 5}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		func(s1 *Service1) *Service2 {
-			return &Service2{F1: "Field2-1", S1: s1,}
+			return &Service2{F1: "Field2-1", S1: s1}
 		},
 		true,
 	)
 
 	s2 := c.GetByObject((*Service2)(nil)).(*Service2)
 
-	referenceService2 := &Service2{F1: "Field2-1", S1: &Service1{F1: "Field1-1", F2: 5,},}
+	referenceService2 := &Service2{F1: "Field2-1", S1: &Service1{F1: "Field1-1", F2: 5}}
 	if !reflect.DeepEqual(s2, referenceService2) {
 		t.Errorf("Wrong service instanstiated. Wanted: %v. Instantiated: %v", referenceService2, s2)
 	}
@@ -113,20 +113,20 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 	c.RegisterServiceFactoryByAlias(
 		"service1alias",
 		func() *Service1 {
-			return &Service1{F1: "Field1-1", F2: 5,}
+			return &Service1{F1: "Field1-1", F2: 5}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service1)(nil),
 		func() *Service1 {
-			return &Service1{F1: "Some value", F2: 0,}
+			return &Service1{F1: "Some value", F2: 0}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
-		Factory {
+		Factory{
 			Create: func(f1 string, s1 *Service1) *Service2 {
-				return &Service2{F1: f1, S1: s1,}
+				return &Service2{F1: f1, S1: s1}
 			},
 			Arguments: []string{"field 2-1", "@service1alias"},
 		},
@@ -149,7 +149,7 @@ func TestGetDependentServiceByFactory(t *testing.T) {
 
 	s2 := c.GetByObject((*Service2)(nil)).(*Service2)
 
-	referenceService2 := &Service2{F1: "field 2-1", S1: &Service1{F1: "Field1-1", F2: 5,},}
+	referenceService2 := &Service2{F1: "field 2-1", S1: &Service1{F1: "Field1-1", F2: 5}}
 
 	if !reflect.DeepEqual(s2, referenceService2) {
 		t.Errorf("Wrong service instanstiated. Wanted: %v with S1: %v. Instantiated: %v with S1: %v", referenceService2, referenceService2.S1, s2, s2.S1)
@@ -179,7 +179,7 @@ func TestGetByAlias(t *testing.T) {
 		(*Service1)(nil),
 		func() *Service1 {
 			factoryCalled++
-			return &Service1{F1: 1,}
+			return &Service1{F1: 1}
 		},
 		true,
 	)
@@ -198,7 +198,6 @@ func TestGetByAlias(t *testing.T) {
 		return
 	}
 
-
 	gotByObj := c.GetByObject((*Service1)(nil)).(*Service1)
 	gotByAlias1 := c.GetByAlias("service1alias").(*Service1)
 	gotByAlias2 := c.GetByAlias("service1alias2").(*Service1)
@@ -207,10 +206,10 @@ func TestGetByAlias(t *testing.T) {
 	if gotByObj.F1 != gotByAlias1.F1 || gotByObj.F1 != gotByAlias2.F1 || gotByAlias1.F1 != gotByAlias2.F1 || factoryCalled != 1 {
 		t.Errorf(
 			"Get by alias instantiated different instances. \n"+
-			" gotByObj = %+v \n"+
-			" gotByAlias1 = %+v \n"+
-			" gotByAlias2 = %+v \n"+
-			" Factory called %d times",
+				" gotByObj = %+v \n"+
+				" gotByAlias1 = %+v \n"+
+				" gotByAlias2 = %+v \n"+
+				" Factory called %d times",
 			gotByObj,
 			gotByAlias1,
 			gotByAlias2,
@@ -238,22 +237,22 @@ func TestCaching(t *testing.T) {
 		"service1alias",
 		func() *Service1 {
 			s1FactoryCalled++
-			return &Service1{F1: "Field1-1", F2: 5,}
+			return &Service1{F1: "Field1-1", F2: 5}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service1)(nil),
 		func() *Service1 {
 			s2FactoryCalled1++
-			return &Service1{F1: "Some value", F2: 0,}
+			return &Service1{F1: "Some value", F2: 0}
 		},
 		false,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
-		Factory {
+		Factory{
 			Create: func(f1 string, s1 *Service1) *Service2 {
 				s2FactoryCalled2++
-				return &Service2{F1: f1, S1: s1,}
+				return &Service2{F1: f1, S1: s1}
 			},
 			Arguments: []string{"field 2-1", "@service1alias"},
 		},
@@ -272,8 +271,8 @@ func TestCaching(t *testing.T) {
 	if s1FactoryCalled != s1FactoryCalledExpected || s2FactoryCalled1 != maxIterations || s2FactoryCalled2 != s2FactoryCalled2Expected {
 		t.Errorf(
 			"factory1 called %d, expected %d \n"+
-			"factory2 called %d, expected %d \n"+
-			"factory3 called %d, expected %d \n",
+				"factory2 called %d, expected %d \n"+
+				"factory3 called %d, expected %d \n",
 			s1FactoryCalled, s1FactoryCalledExpected,
 			s2FactoryCalled1, maxIterations,
 			s2FactoryCalled2, s2FactoryCalled2Expected,
@@ -299,11 +298,11 @@ func TestConcurrentTreeDependency(t *testing.T) {
 	factoriesRunsChan := make(chan string)
 	stopChan := make(chan bool)
 	go func() {
-		for{
+		for {
 			select {
-			case factoryName := <- factoriesRunsChan:
+			case factoryName := <-factoriesRunsChan:
 				factoriesRunsCount[factoryName]++
-			case <- stopChan:
+			case <-stopChan:
 				return
 			}
 		}
@@ -316,23 +315,23 @@ func TestConcurrentTreeDependency(t *testing.T) {
 		func() *Service1 {
 			// Timer is needed to make other dependent factories (for Service2 and Service3) to wait for current task to complete
 			timer1 := time.NewTimer(1 * time.Second)
-			<- timer1.C
+			<-timer1.C
 			factoriesRunsChan <- "service1"
-			return &Service1{F1: "Field1-1", F2: 5,}
+			return &Service1{F1: "Field1-1", F2: 5}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
 		func(s1 *Service1) *Service2 {
 			factoriesRunsChan <- "service2"
-			return &Service2{F1: "Field2-1", S1: s1,}
+			return &Service2{F1: "Field2-1", S1: s1}
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service3)(nil),
 		func(s1 *Service1) *Service3 {
 			factoriesRunsChan <- "service3"
-			return &Service3{F1: "Field3-1", S1: s1,}
+			return &Service3{F1: "Field3-1", S1: s1}
 		},
 		true,
 	)
@@ -358,8 +357,8 @@ func TestConcurrentTreeDependency(t *testing.T) {
 		}
 	}
 
-	referenceService2 := &Service2{F1: "Field2-1", S1: &Service1{F1: "Field1-1", F2: 5,},}
-	referenceService3 := &Service3{F1: "Field3-1", S1: &Service1{F1: "Field1-1", F2: 5,},}
+	referenceService2 := &Service2{F1: "Field2-1", S1: &Service1{F1: "Field1-1", F2: 5}}
+	referenceService3 := &Service3{F1: "Field3-1", S1: &Service1{F1: "Field1-1", F2: 5}}
 	if !reflect.DeepEqual(s2, referenceService2) {
 		t.Errorf("Wrong service2 instanstiated.\nWanted:\t%#v \nInstantiated:\t%#v", referenceService2, s2)
 	}
@@ -388,13 +387,13 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 	servicesGetChan := make(chan string)
 	stopChan := make(chan bool)
 	go func() {
-		for{
+		for {
 			select {
-			case factoryName := <- factoriesRunsChan:
+			case factoryName := <-factoriesRunsChan:
 				factoriesRunsCount[factoryName]++
-			case serviceName := <- servicesGetChan:
+			case serviceName := <-servicesGetChan:
 				servicesGetCount[serviceName]++
-			case <- stopChan:
+			case <-stopChan:
 				return
 			}
 		}
@@ -404,43 +403,43 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 	defer c.Close()
 	c.RegisterServiceFactoryByObject(
 		(*Service1)(nil),
-		Factory {
+		Factory{
 			Create: func(f1 string, f2 int) *Service1 {
 				factoriesRunsChan <- "service1"
-				<- time.NewTimer(1 * time.Second).C
-				return &Service1{F1: f1, F2: f2,}
+				<-time.NewTimer(1 * time.Second).C
+				return &Service1{F1: f1, F2: f2}
 			},
 			Arguments: []string{"field 1-1", "123"},
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service2)(nil),
-		Factory {
+		Factory{
 			Create: func(f1 string, s1 *Service1) *Service2 {
 				factoriesRunsChan <- "service2"
-				return &Service2{F1: f1, S1: s1,}
+				return &Service2{F1: f1, S1: s1}
 			},
-			Arguments: []string{"field 2-1",},
+			Arguments: []string{"field 2-1"},
 		},
 		true,
 	).RegisterServiceFactoryByObject(
 		(*Service3)(nil),
-		Factory {
+		Factory{
 			Create: func(f1 string, s1 *Service1) *Service3 {
 				factoriesRunsChan <- "service3"
-				return &Service3{F1: f1, S1: s1,}
+				return &Service3{F1: f1, S1: s1}
 			},
-			Arguments: []string{"field 3-1",},
+			Arguments: []string{"field 3-1"},
 		},
 		true,
 	)
 
-	referenceService1 := &Service1{F1: "field 1-1", F2: 123,}
-	referenceService2 := &Service2{F1: "field 2-1", S1: &Service1{F1: "field 1-1", F2: 123,},}
-	referenceService3 := &Service3{F1: "field 3-1", S1: &Service1{F1: "field 1-1", F2: 123,},}
+	referenceService1 := &Service1{F1: "field 1-1", F2: 123}
+	referenceService2 := &Service2{F1: "field 2-1", S1: &Service1{F1: "field 1-1", F2: 123}}
+	referenceService3 := &Service3{F1: "field 3-1", S1: &Service1{F1: "field 1-1", F2: 123}}
 
 	wg := new(sync.WaitGroup)
-	for i:=0; i < 500; i++ {
+	for i := 0; i < 500; i++ {
 		wg.Add(1)
 		go func() {
 			rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -474,7 +473,7 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 		"Factories called: \n%s",
 		func() string {
 			result := ""
-			for f, c := range factoriesRunsCount{
+			for f, c := range factoriesRunsCount {
 				result += fmt.Sprintf("  %s: %d\n", f, c)
 			}
 			return result
@@ -485,10 +484,88 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 		"Services get: \n%s",
 		func() string {
 			result := ""
-			for f, c := range servicesGetCount{
+			for f, c := range servicesGetCount {
 				result += fmt.Sprintf("  %s: %d\n", f, c)
 			}
 			return result
 		}(),
 	)
+}
+
+func TestCycleDetection(t *testing.T) {
+	type Service1 struct {
+		F1 string
+		F2 int
+	}
+	type Service2 struct {
+		F1 string
+		S1 *Service1
+	}
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByObject(
+		(*Service1)(nil),
+		func(s2 *Service2) *Service1 {
+			return &Service1{F1: "Field1-1" + s2.F1, F2: 5}
+		},
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Service2)(nil),
+		func(s1 *Service1) *Service2 {
+			return &Service2{F1: "Field2-1", S1: s1}
+		},
+		true,
+	)
+
+	noCycles, cycledService := c.CheckCycles()
+	if noCycles {
+		t.Errorf("Failed to detect cycle")
+	} else {
+		t.Logf("Cycle detected for service " + cycledService)
+	}
+}
+
+func TestCycleDetectionWithMultipleAliases(t *testing.T) {
+	type Service1 struct {
+		F1 string
+		F2 int
+	}
+	type Service2 struct {
+		F1 string
+		S1 *Service1
+	}
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByAlias(
+		"service1",
+		func(s2 *Service2) *Service1 {
+			return &Service1{F1: "Field1-1" + s2.F1, F2: 5}
+		},
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Service2)(nil),
+		Factory{
+			Create: func(s1 *Service1) *Service2 {
+				return &Service2{F1: "Field2-1", S1: s1}
+			},
+			Arguments: []string{"@service1"},
+		},
+		true,
+	)
+
+	aliasesAdded := c.AddServiceAlias("service1", "service1-2") &&
+		c.AddServiceAliasByObject((*Service2)(nil), "service2") &&
+		c.AddServiceAliasByObject((*Service2)(nil), "service2-2")
+	if !aliasesAdded {
+		t.Errorf("Failed to add aliases")
+	}
+
+	noCycles, cycledService := c.CheckCycles()
+	if noCycles {
+		t.Errorf("Failed to detect cycle")
+	} else {
+		t.Logf("Cycle detected for service " + cycledService)
+	}
 }
