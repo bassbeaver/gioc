@@ -569,3 +569,32 @@ func TestCycleDetectionWithMultipleAliases(t *testing.T) {
 		t.Logf("Cycle detected for service " + cycledService)
 	}
 }
+
+func TestContainerParameters(t *testing.T) {
+	type Service1 struct {
+		F1 string
+	}
+
+	c := NewContainer()
+	defer c.Close()
+
+	c.parameters.set("service1.f1", "service1-field1")
+
+	c.RegisterServiceFactoryByObject(
+		(*Service1)(nil),
+		Factory{
+			Create: func(f1 string) *Service1 {
+				return &Service1{F1: f1}
+			},
+			Arguments: []string{"#service1.f1"},
+		},
+		true,
+	)
+
+	s1 := c.GetByObject((*Service1)(nil)).(*Service1)
+
+	expected := c.parameters.GetString("service1.f1")
+	if expected != s1.F1 {
+		t.Errorf("Expected %s, got %s", expected, s1.F1)
+	}
+}

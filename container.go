@@ -1,24 +1,17 @@
 package gioc
 
 import (
+	"errors"
 	"fmt"
+	"github.com/spf13/viper"
 	"reflect"
-	"sync"
 )
 
 type Container struct {
-	registryMutex   sync.RWMutex
-	registry        map[string]*registryEntry
-	servicesCounter int
-	taskManager     *taskManager
-	cyclesChecked   bool
-}
-
-type registryEntry struct {
-	factory        *Factory
-	cachingEnabled bool
-	cachedService  interface{}
-	id             int
+	registry      *registry
+	parameters    *parametersBag
+	taskManager   *taskManager
+	cyclesChecked bool
 }
 
 // Registers service factory to Container. Parameter factory must be one of two types:
@@ -38,7 +31,7 @@ func (c *Container) RegisterServiceFactoryByAlias(serviceAlias string, factory i
 
 	checkFactoryMethod(factoryObj.Create)
 
-	c.writeRegistry(serviceAlias, &registryEntry{
+	c.registry.write(serviceAlias, &registryEntry{
 		factory:        factoryObj,
 		cachingEnabled: enableCaching,
 		cachedService:  nil,
@@ -55,8 +48,8 @@ func (c *Container) RegisterServiceFactoryByObject(serviceObj interface{}, facto
 }
 
 func (c *Container) AddServiceAlias(existingAlias, newAlias string) bool {
-	if serviceEntry := c.readRegistry(existingAlias); nil != serviceEntry {
-		c.writeRegistry(newAlias, serviceEntry)
+	if serviceEntry := c.registry.read(existingAlias); nil != serviceEntry {
+		c.registry.write(newAlias, serviceEntry)
 		return true
 	}
 	return false
@@ -75,7 +68,7 @@ func (c *Container) GetByAlias(alias string) interface{} {
 		}
 	}
 
-	registryEntry := c.readRegistry(alias)
+	registryEntry := c.registry.read(alias)
 	if nil == registryEntry {
 		panic(
 			fmt.Sprintf("Failed to instantiate service '%s'. Factory for service '%s' not registered", alias, alias),
@@ -86,19 +79,25 @@ func (c *Container) GetByAlias(alias string) interface{} {
 		return registryEntry.cachedService
 	}
 
-	serviceCreationListener := make(chan interface{})
+	serviceCreationListener := make(chan *taskResult)
 	c.taskManager.addTask(&taskDefinition{
 		taskName: fmt.Sprintf("service_%d", registryEntry.id),
 		listener: serviceCreationListener,
-		perform: func() interface{} {
+		perform: func() (interface{}, error) {
 			return c.instantiate(registryEntry.factory)
 		},
 	})
 
-	service := <-serviceCreationListener
+	instantiationResult := <-serviceCreationListener
+	if nil != instantiationResult.taskError {
+		panic(
+			fmt.Sprintf("Failed to instantiate service '%s'. Error: %s", alias, instantiationResult.taskError.Error()),
+		)
+	}
+	service := instantiationResult.result
 
 	if registryEntry.cachingEnabled {
-		c.addServiceToCache(alias, service)
+		c.registry.addServiceToCache(alias, service)
 	}
 
 	return service
@@ -108,7 +107,7 @@ func (c *Container) GetByObject(serviceObj interface{}) interface{} {
 	return c.GetByAlias(reflect.TypeOf(serviceObj).String())
 }
 
-func (c *Container) instantiate(factory *Factory) interface{} {
+func (c *Container) instantiate(factory *Factory) (interface{}, error) {
 	factoryMethodValue := reflect.ValueOf(factory.Create)
 
 	factoryMethodType := factoryMethodValue.Type()
@@ -118,16 +117,23 @@ func (c *Container) instantiate(factory *Factory) interface{} {
 
 		argumentType := factoryMethodType.In(argumentNum)
 
-		// If there is argument data for current parameter - process it
+		// If there is argument data for current argument - process it
 		if argumentNum < len(factory.Arguments) {
 			argumentDefinition := factory.Arguments[argumentNum]
 			// Sign @ indicates that it is service alias
 			if "@" == argumentDefinition[:1] {
 				argument = c.GetByAlias(argumentDefinition[1:])
+				// Sign # indicates that it is container parameter
+			} else if "#" == argumentDefinition[:1] {
+				parameter := argumentDefinition[1:]
+				if !c.parameters.IsSet(parameter) {
+					return nil, errors.New(fmt.Sprintf("Container's parameter '%s' not found in Container's parameters bag", parameter))
+				}
+				argument = getArgumentValueFromString(argumentType.Kind(), c.parameters.GetString(parameter))
 			} else {
 				argument = getArgumentValueFromString(argumentType.Kind(), argumentDefinition)
 			}
-			// If there is no data for current parameter - just get it from Container
+			// If there is no data for current argument - just get it from Container
 		} else {
 			argument = c.GetByAlias(argumentType.String())
 		}
@@ -137,29 +143,7 @@ func (c *Container) instantiate(factory *Factory) interface{} {
 
 	service := factoryMethodValue.Call(factoryInputArguments)[0].Interface()
 
-	return service
-}
-
-func (c *Container) writeRegistry(alias string, entry *registryEntry) {
-	c.registryMutex.Lock()
-	defer c.registryMutex.Unlock()
-
-	c.servicesCounter++
-	entry.id = c.servicesCounter
-	c.registry[alias] = entry
-}
-
-func (c *Container) addServiceToCache(alias string, service interface{}) {
-	c.registryMutex.Lock()
-	defer c.registryMutex.Unlock()
-	c.registry[alias].cachedService = service
-}
-
-func (c *Container) readRegistry(alias string) *registryEntry {
-	c.registryMutex.RLock()
-	defer c.registryMutex.RUnlock()
-
-	return c.registry[alias]
+	return service, nil
 }
 
 // Checks all registered services for dependency cycles.
@@ -174,6 +158,10 @@ func (c *Container) CheckCycles() (bool, string) {
 	return noCycles, cycledService
 }
 
+func (c *Container) SetParameters(parameters *viper.Viper) {
+	c.parameters.Replace(parameters)
+}
+
 func (c *Container) Close() {
 	c.taskManager.stopServe()
 }
@@ -182,7 +170,8 @@ func (c *Container) Close() {
 
 func NewContainer() *Container {
 	c := Container{
-		registry:      make(map[string]*registryEntry, 0),
+		registry:      newRegistry(),
+		parameters:    newParametersBag(),
 		taskManager:   newTaskManager(),
 		cyclesChecked: false,
 	}

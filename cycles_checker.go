@@ -44,8 +44,8 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 
 	// Building checker table. Checker table is indexed by registryEntry.id (which is unique for every unique service)
 	// to avoid duplicate checks because of multiple aliases for one service
-	for serviceAlias := range c.registry {
-		registryElement := c.readRegistry(serviceAlias)
+	for serviceAlias := range c.registry.content {
+		registryElement := c.registry.read(serviceAlias)
 		if _, isInChecker := checker[registryElement.id]; !isInChecker {
 			newCheckerNode := &checkerNode{
 				serviceAlias:    serviceAlias,
@@ -67,11 +67,11 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 					argumentDefinition := registryElement.factory.Arguments[argumentNum]
 					// Sign @ indicates that it is service alias
 					if "@" == argumentDefinition[:1] {
-						argumentId = c.readRegistry(argumentDefinition[1:]).id
+						argumentId = c.registry.read(argumentDefinition[1:]).id
 					}
 					// If there is no argument data for current parameter - suppose that it is a service registered by object
 				} else {
-					argumentsRegistryElement := c.readRegistry(argumentType.String())
+					argumentsRegistryElement := c.registry.read(argumentType.String())
 					if nil == argumentsRegistryElement {
 						panic(
 							fmt.Sprintf(

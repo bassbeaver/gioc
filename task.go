@@ -5,12 +5,12 @@ import (
 )
 
 type taskManager struct {
-	addTaskChan chan *taskDefinition
+	addTaskChan    chan *taskDefinition
 	removeTaskChan chan *taskDefinition
-	stopServeChan chan bool
+	stopServeChan  chan bool
 
 	onServeMutex sync.Mutex
-	onServe bool
+	onServe      bool
 }
 
 func (tm *taskManager) addTask(task *taskDefinition) {
@@ -32,7 +32,7 @@ func (tm *taskManager) serve() {
 
 		for {
 			select {
-			case newTaskDef := <- tm.addTaskChan:
+			case newTaskDef := <-tm.addTaskChan:
 				// If this task manager was told to stop serving - do not process new task
 				if !tm.onServe {
 					continue
@@ -47,16 +47,20 @@ func (tm *taskManager) serve() {
 				// Run task
 				runningTasksListeners.append(newTaskDef.taskName, newTaskDef.listener)
 				go func() {
-					result := newTaskDef.perform()
+					result, taskError := newTaskDef.perform()
+					taskResultObj := &taskResult{
+						result:    result,
+						taskError: taskError,
+					}
 					listeners, _ := runningTasksListeners.get(newTaskDef.taskName)
 					for _, listener := range listeners {
-						listener <- result
+						listener <- taskResultObj
 					}
 					tm.removeTaskChan <- newTaskDef
 				}()
-			case processedTask := <- tm.removeTaskChan:
+			case processedTask := <-tm.removeTaskChan:
 				runningTasksListeners.delete(processedTask.taskName)
-			case <- tm.stopServeChan:
+			case <-tm.stopServeChan:
 				// This stopServeChan channel used to stop this goroutine after stopServe() call if no task are running
 				tm.onServe = false
 			}
@@ -72,33 +76,46 @@ func (tm *taskManager) stopServe() {
 	tm.stopServeChan <- true
 }
 
+// --------------------------------------------
+
 type taskDefinition struct {
 	taskName string
-	listener chan interface{}
-	perform func() interface{}
+	listener chan *taskResult
+	perform  func() (interface{}, error)
 }
+
+// --------------------------------------------
+
+type taskResult struct {
+	result    interface{}
+	taskError error
+}
+
+// --------------------------------------------
 
 type runningTasksListenersMap struct {
-	runningTasks map[string][]chan interface{}
-	mutex sync.RWMutex
+	runningTasks map[string][]chan *taskResult
+	mutex        sync.RWMutex
 }
 
-func (m *runningTasksListenersMap) get(key string) ([]chan interface{}, bool) {
+func (m *runningTasksListenersMap) get(key string) ([]chan *taskResult, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
+
 	val, isSet := m.runningTasks[key]
+
 	return val, isSet
 }
 
-func (m *runningTasksListenersMap) append(key string, val chan interface{}) {
+func (m *runningTasksListenersMap) append(taskName string, listener chan *taskResult) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if _, keyIsPresent := m.runningTasks[key]; !keyIsPresent {
-		m.runningTasks[key] = make([]chan interface{}, 0)
+	if _, keyIsPresent := m.runningTasks[taskName]; !keyIsPresent {
+		m.runningTasks[taskName] = make([]chan *taskResult, 0)
 	}
 
-	m.runningTasks[key] = append(m.runningTasks[key], val)
+	m.runningTasks[taskName] = append(m.runningTasks[taskName], listener)
 }
 
 func (m *runningTasksListenersMap) len() int {
@@ -115,15 +132,15 @@ func (m *runningTasksListenersMap) delete(key string) {
 
 func newRunningTasksListenersMap() *runningTasksListenersMap {
 	return &runningTasksListenersMap{
-		runningTasks: make(map[string][]chan interface{}, 0),
+		runningTasks: make(map[string][]chan *taskResult, 0),
 	}
 }
 
 func newTaskManager() *taskManager {
 	return &taskManager{
-		addTaskChan: make(chan *taskDefinition),
+		addTaskChan:    make(chan *taskDefinition),
 		removeTaskChan: make(chan *taskDefinition),
-		stopServeChan: make(chan bool),
-		onServe: true,
+		stopServeChan:  make(chan bool),
+		onServe:        true,
 	}
 }
