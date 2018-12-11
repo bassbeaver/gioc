@@ -1,47 +1,46 @@
 package gioc
 
 import (
-	"github.com/spf13/viper"
 	"sync"
 )
 
-type parametersBag struct {
-	mutex      sync.RWMutex
-	parameters *viper.Viper
+type ParametersAccessor interface {
+	GetString(key string) string
+	IsSet(key string) bool
 }
 
-func (p *parametersBag) set(key string, value interface{}) {
+type parametersBag struct {
+	mutex      sync.RWMutex
+	parameters map[string]string
+}
+
+func (p *parametersBag) set(key string, value string) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	p.parameters.Set(key, value)
+	p.parameters[key] = value
 }
 
 func (p *parametersBag) GetString(key string) string {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
-	return p.parameters.GetString(key)
+	return p.parameters[key]
 }
 
 func (p *parametersBag) IsSet(key string) bool {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
-	return p.parameters.IsSet(key)
-}
+	_, isset := p.parameters[key]
 
-func (p *parametersBag) Replace(newParameters *viper.Viper) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	p.parameters = newParameters
+	return isset
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
 func newParametersBag() *parametersBag {
 	return &parametersBag{
-		parameters: viper.New(),
+		parameters: make(map[string]string),
 	}
 }
