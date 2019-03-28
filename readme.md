@@ -4,6 +4,12 @@ Simple dependency injection container for Golang.
 
 ### Installation
 
+With go mod
+ ```bash
+ go get github.com/bassbeaver/gioc
+ ```
+
+With Dep:
  ```bash
  dep ensure --add github.com/bassbeaver/gioc
  ```
