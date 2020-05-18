@@ -20,13 +20,10 @@ type dependencyChain struct {
 }
 
 func (c *dependencyChain) Contains(registryElementId int) bool {
-	e := c.Front()
-	for nil != e {
+	for e := c.Front(); nil != e; e = e.Next() {
 		if e.Value.(*checkerNode).id == registryElementId {
 			return true
 		}
-
-		e = e.Next()
 	}
 
 	return false
@@ -35,15 +32,12 @@ func (c *dependencyChain) Contains(registryElementId int) bool {
 func (c *dependencyChain) String() string {
 	var result string
 
-	e := c.Front()
-	for nil != e {
+	for e := c.Front(); nil != e; e = e.Next() {
 		if "" != result {
 			result += "->"
 		}
 
 		result += e.Value.(*checkerNode).serviceName
-
-		e = e.Next()
 	}
 
 	return result
