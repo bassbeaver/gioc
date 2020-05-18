@@ -8,23 +8,21 @@ import (
 )
 
 type checkerNode struct {
+	id int
 	serviceName     string
-	visited         bool
-	level			int
 	dependenciesIds []int
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
 type dependencyChain struct {
-	list.List
+	*list.List
 }
 
-func (c *dependencyChain) Contains(needle string) bool {
+func (c *dependencyChain) Contains(registryElementId int) bool {
 	e := c.Front()
-
 	for nil != e {
-		if e.Value.(string) == needle {
+		if e.Value.(*checkerNode).id == registryElementId {
 			return true
 		}
 
@@ -36,14 +34,14 @@ func (c *dependencyChain) Contains(needle string) bool {
 
 func (c *dependencyChain) String() string {
 	var result string
-	e := c.Front()
 
+	e := c.Front()
 	for nil != e {
 		if "" != result {
 			result += "->"
 		}
 
-		result += e.Value.(string)
+		result += e.Value.(*checkerNode).serviceName
 
 		e = e.Next()
 	}
@@ -51,40 +49,41 @@ func (c *dependencyChain) String() string {
 	return result
 }
 
-func NewDependencyChain() *dependencyChain {
-	return &dependencyChain{List: *list.New()}
+func (c *dependencyChain) Copy() *dependencyChain {
+	result := newDependencyChain()
+
+	for e := c.Front(); e != nil; e = e.Next() {
+		result.PushBack(e.Value)
+	}
+
+	return result
+}
+
+func newDependencyChain() *dependencyChain {
+	return &dependencyChain{List: list.New()}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
 type checkerTable map[int]*checkerNode
 
-func (t checkerTable) clearVisited() {
-	for _, node := range t {
-		node.visited = false
-		node.level = 0
-	}
-}
+func (t checkerTable) walkCheckerNode(node *checkerNode, chain *dependencyChain) string {
+	if chain.Contains(node.id) {
+		chain.PushBack(node)
 
-func (t checkerTable) walkCheckerNode(node *checkerNode, path string) string {
-	if "" != path {
-		path += "->"
-	}
-	path += node.serviceName
-
-	if node.visited {
-		return path
+		return chain.String()
 	}
 
-	// If current node is leaf (dependency without it's own dependencies) it should not be marked as visited
-	// because current subtree ended and current leaf does not create loop.
-	if len(node.dependenciesIds) > 0 {
-		node.visited = true
-	}
+	chain.PushBack(node)
 
 	for _, dependencyId := range node.dependenciesIds {
 		dependencyNode := t[dependencyId]
-		if loopedPath := t.walkCheckerNode(dependencyNode, path); "" != loopedPath {
+		// Passing copy of current dependency chain (not current chain itself) to next
+		// walkCheckerNode() call to remove possible interference from "sibling" branches.
+		// Sibling interference can be in case like:
+		// Root->Node1->Node1_1->Leaf
+		// Root->Node2->Node2_1->Node1_1->Leaf
+		if loopedPath := t.walkCheckerNode(dependencyNode, chain.Copy()); "" != loopedPath {
 			return loopedPath
 		}
 	}
@@ -142,9 +141,7 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 
 	// Searching cycles
 	for _, currentNode := range checker {
-		checker.clearVisited()
-
-		loopedPath := checker.walkCheckerNode(currentNode, "")
+		loopedPath := checker.walkCheckerNode(currentNode, newDependencyChain())
 		if "" != loopedPath {
 			return false, loopedPath
 		}
@@ -155,7 +152,7 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 
 func createCheckerNode(c *Container, registryElement *registryEntry) (*checkerNode, error) {
 	newCheckerNode := &checkerNode{
-		visited:         false,
+		id: registryElement.id,
 		dependenciesIds: make([]int, 0),
 	}
 
