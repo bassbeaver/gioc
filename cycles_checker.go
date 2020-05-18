@@ -1,41 +1,88 @@
 package gioc
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
 	"reflect"
 )
 
 type checkerNode struct {
+	id int
 	serviceName     string
-	visited         bool
 	dependenciesIds []int
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+type dependencyChain struct {
+	*list.List
+}
+
+func (c *dependencyChain) Contains(registryElementId int) bool {
+	for e := c.Front(); nil != e; e = e.Next() {
+		if e.Value.(*checkerNode).id == registryElementId {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *dependencyChain) String() string {
+	var result string
+
+	for e := c.Front(); nil != e; e = e.Next() {
+		if "" != result {
+			result += "->"
+		}
+
+		result += e.Value.(*checkerNode).serviceName
+	}
+
+	return result
+}
+
+func (c *dependencyChain) Copy() *dependencyChain {
+	result := newDependencyChain()
+
+	for e := c.Front(); e != nil; e = e.Next() {
+		result.PushBack(e.Value)
+	}
+
+	return result
+}
+
+func newDependencyChain() *dependencyChain {
+	return &dependencyChain{List: list.New()}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
 type checkerTable map[int]*checkerNode
 
-func (t checkerTable) clearVisited() {
-	for _, node := range t {
-		node.visited = false
-	}
-}
+func (t checkerTable) walkCheckerNode(node *checkerNode, chain *dependencyChain) string {
+	if chain.Contains(node.id) {
+		chain.PushBack(node)
 
-func (t checkerTable) walkCheckerNode(node *checkerNode) bool {
-	if node.visited {
-		return false
+		return chain.String()
 	}
-	node.visited = true
+
+	chain.PushBack(node)
 
 	for _, dependencyId := range node.dependenciesIds {
 		dependencyNode := t[dependencyId]
-		if !t.walkCheckerNode(dependencyNode) {
-			return false
+		// Passing copy of current dependency chain (not current chain itself) to next
+		// walkCheckerNode() call to remove possible interference from "sibling" branches.
+		// Sibling interference can be in case like:
+		// Root->Node1->Node1_1->Leaf
+		// Root->Node2->Node2_1->Node1_1->Leaf
+		if loopedPath := t.walkCheckerNode(dependencyNode, chain.Copy()); "" != loopedPath {
+			return loopedPath
 		}
 	}
 
-	return true
+	return ""
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -88,11 +135,9 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 
 	// Searching cycles
 	for _, currentNode := range checker {
-		checker.clearVisited()
-
-		noCycles := checker.walkCheckerNode(currentNode)
-		if !noCycles {
-			return false, currentNode.serviceName
+		loopedPath := checker.walkCheckerNode(currentNode, newDependencyChain())
+		if "" != loopedPath {
+			return false, loopedPath
 		}
 	}
 
@@ -101,7 +146,7 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 
 func createCheckerNode(c *Container, registryElement *registryEntry) (*checkerNode, error) {
 	newCheckerNode := &checkerNode{
-		visited:         false,
+		id: registryElement.id,
 		dependenciesIds: make([]int, 0),
 	}
 

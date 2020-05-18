@@ -88,7 +88,7 @@ func (c *Container) BindObjectToAlias(existingAlias string, serviceObj interface
 func (c *Container) GetByAlias(alias string) interface{} {
 	if !c.cyclesChecked {
 		if noCycles, cycledService := c.CheckCycles(); !noCycles {
-			panic("Service " + cycledService + " has circular dependencies")
+			panic("Circular dependencies detected: " + cycledService)
 		}
 	}
 
@@ -108,7 +108,7 @@ func (c *Container) GetByAlias(alias string) interface{} {
 func (c *Container) GetByObject(serviceObj interface{}) interface{} {
 	if !c.cyclesChecked {
 		if noCycles, cycledService := c.CheckCycles(); !noCycles {
-			panic("Service " + cycledService + " has circular dependencies")
+			panic("Circular dependencies detected: " + cycledService)
 		}
 	}
 
