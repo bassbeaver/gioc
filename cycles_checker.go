@@ -1,6 +1,7 @@
 package gioc
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
 	"reflect"
@@ -9,7 +10,49 @@ import (
 type checkerNode struct {
 	serviceName     string
 	visited         bool
+	level			int
 	dependenciesIds []int
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+type dependencyChain struct {
+	list.List
+}
+
+func (c *dependencyChain) Contains(needle string) bool {
+	e := c.Front()
+
+	for nil != e {
+		if e.Value.(string) == needle {
+			return true
+		}
+
+		e = e.Next()
+	}
+
+	return false
+}
+
+func (c *dependencyChain) String() string {
+	var result string
+	e := c.Front()
+
+	for nil != e {
+		if "" != result {
+			result += "->"
+		}
+
+		result += e.Value.(string)
+
+		e = e.Next()
+	}
+
+	return result
+}
+
+func NewDependencyChain() *dependencyChain {
+	return &dependencyChain{List: *list.New()}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -19,23 +62,34 @@ type checkerTable map[int]*checkerNode
 func (t checkerTable) clearVisited() {
 	for _, node := range t {
 		node.visited = false
+		node.level = 0
 	}
 }
 
-func (t checkerTable) walkCheckerNode(node *checkerNode) bool {
-	if node.visited {
-		return false
+func (t checkerTable) walkCheckerNode(node *checkerNode, path string) string {
+	if "" != path {
+		path += "->"
 	}
-	node.visited = true
+	path += node.serviceName
+
+	if node.visited {
+		return path
+	}
+
+	// If current node is leaf (dependency without it's own dependencies) it should not be marked as visited
+	// because current subtree ended and current leaf does not create loop.
+	if len(node.dependenciesIds) > 0 {
+		node.visited = true
+	}
 
 	for _, dependencyId := range node.dependenciesIds {
 		dependencyNode := t[dependencyId]
-		if !t.walkCheckerNode(dependencyNode) {
-			return false
+		if loopedPath := t.walkCheckerNode(dependencyNode, path); "" != loopedPath {
+			return loopedPath
 		}
 	}
 
-	return true
+	return ""
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -90,9 +144,9 @@ func checkCyclesForContainer(c *Container) (bool, string) {
 	for _, currentNode := range checker {
 		checker.clearVisited()
 
-		noCycles := checker.walkCheckerNode(currentNode)
-		if !noCycles {
-			return false, currentNode.serviceName
+		loopedPath := checker.walkCheckerNode(currentNode, "")
+		if "" != loopedPath {
+			return false, loopedPath
 		}
 	}
 

@@ -492,29 +492,21 @@ func TestHighloadConcurrentTreeDependency(t *testing.T) {
 	)
 }
 
-func TestCycleDetection(t *testing.T) {
-	type Service1 struct {
-		F1 string
-		F2 int
-	}
-	type Service2 struct {
-		F1 string
-		S1 *Service1
+func TestCycleDetectionSimple(t *testing.T) {
+	type Root struct {}
+	type Node1 struct {
+		D1 *Root
 	}
 
 	c := NewContainer()
 	defer c.Close()
 	c.RegisterServiceFactoryByObject(
-		(*Service1)(nil),
-		func(s2 *Service2) *Service1 {
-			return &Service1{F1: "Field1-1" + s2.F1, F2: 5}
-		},
+		(*Root)(nil),
+		func(s2 *Node1) *Root { return &Root{} },
 		true,
 	).RegisterServiceFactoryByObject(
-		(*Service2)(nil),
-		func(s1 *Service1) *Service2 {
-			return &Service2{F1: "Field2-1", S1: s1}
-		},
+		(*Node1)(nil),
+		func(s1 *Root) *Node1 { return &Node1{D1: s1} },
 		true,
 	)
 
@@ -522,42 +514,34 @@ func TestCycleDetection(t *testing.T) {
 	if noCycles {
 		t.Errorf("Failed to detect cycle")
 	} else {
-		t.Logf("Cycle detected for service " + cycledService)
+		t.Logf("Cycle detected: " + cycledService)
 	}
 }
 
-func TestCycleDetectionWithMultipleAliases(t *testing.T) {
-	type Service1 struct {
-		F1 string
-		F2 int
-	}
-	type Service2 struct {
-		F1 string
-		S1 *Service1
+func TestCycleDetectionSimpleWithMultipleAliases(t *testing.T) {
+	type Root struct {}
+	type Node1 struct {
+		D1 *Root
 	}
 
 	c := NewContainer()
 	defer c.Close()
 	c.RegisterServiceFactoryByAlias(
 		"service1",
-		func(s2 *Service2) *Service1 {
-			return &Service1{F1: "Field1-1" + s2.F1, F2: 5}
-		},
+		func(s2 *Node1) *Root { return &Root{} },
 		true,
 	).RegisterServiceFactoryByObject(
-		(*Service2)(nil),
+		(*Node1)(nil),
 		Factory{
-			Create: func(s1 *Service1) *Service2 {
-				return &Service2{F1: "Field2-1", S1: s1}
-			},
+			Create: func(s1 *Root) *Node1 { return &Node1{D1: s1} },
 			Arguments: []string{"@service1"},
 		},
 		true,
 	)
 
 	aliasesAdded := c.AddServiceAlias("service1", "service1-2") &&
-		c.AddServiceAliasByObject((*Service2)(nil), "service2") &&
-		c.AddServiceAliasByObject((*Service2)(nil), "service2-2")
+		c.AddServiceAliasByObject((*Node1)(nil), "service2") &&
+		c.AddServiceAliasByObject((*Node1)(nil), "service2-2")
 	if !aliasesAdded {
 		t.Errorf("Failed to add aliases")
 	}
@@ -566,7 +550,161 @@ func TestCycleDetectionWithMultipleAliases(t *testing.T) {
 	if noCycles {
 		t.Errorf("Failed to detect cycle")
 	} else {
-		t.Logf("Cycle detected for service " + cycledService)
+		t.Logf("Cycle detected: " + cycledService)
+	}
+}
+
+func TestCycleDetectionFalseCycleInLeafs(t *testing.T) {
+	type Leaf struct {}
+	type Node1 struct {
+		D1 *Leaf
+	}
+	type Node2 struct {
+		D1 *Leaf
+	}
+	type Root struct {
+		DN1 *Node1
+		DN2 *Node2
+	}
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByObject(
+		(*Leaf)(nil),
+		func() *Leaf { return &Leaf{} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node1)(nil),
+		func(d1 *Leaf) *Node1 { return &Node1{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node2)(nil),
+		func(d1 *Leaf) *Node2 { return &Node2{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Root)(nil),
+		func(sd1 *Node1, sd2 *Node2) *Root { return &Root{DN1: sd1, DN2: sd2} },
+		true,
+	)
+
+	noCycles, cycledService := c.CheckCycles()
+	if noCycles {
+		t.Logf("No cycles detected")
+	} else {
+		t.Errorf("False cycle detected: "+cycledService)
+	}
+}
+
+// Test case:
+//  Root:
+//    Node1:
+//      Leaf
+//    Node2:
+//      Leaf
+//      Root: (!) loop is here (!)
+func TestCycleDetectionCycleInSubtree1(t *testing.T) {
+	type Leaf struct {}
+	type Root struct {
+		DN1 interface{}
+		DN2 interface{}
+	}
+	type Node1 struct {
+		D1 *Leaf
+	}
+	type Node2 struct {
+		D1 *Leaf
+		D2 *Root
+	}
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByObject(
+		(*Leaf)(nil),
+		func() *Leaf { return &Leaf{} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node1)(nil),
+		func(d1 *Leaf) *Node1 { return &Node1{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node2)(nil),
+		func(d1 *Leaf, d2 *Root) *Node2 { return &Node2{D1: d1, D2: d2} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Root)(nil),
+		func(dn1 *Node1, dn2 *Node2) *Root { return &Root{DN1: dn1, DN2: dn2} },
+		true,
+	)
+
+	noCycles, cycledService := c.CheckCycles()
+	if noCycles {
+		t.Errorf("Failed to detect cycle")
+	} else {
+		t.Logf("Cycle detected: "+cycledService)
+	}
+}
+
+// Test case:
+//  Root:
+//    Node1:
+//      Node1_1:
+//        Leaf
+//    Node2:
+//      Node2_1:
+//        Node1_1: (!) false loop can be detected here (!)
+//          Leaf
+func TestCycleDetectionCycleInSubtree2(t *testing.T) {
+	type Leaf struct {}
+	type Root struct {
+		DN1 interface{}
+		DN2 interface{}
+	}
+	type Node1_1 struct {
+		D1 *Leaf
+	}
+	type Node1 struct {
+		D1 *Node1_1
+	}
+	type Node2_1 struct {
+		D1 *Node1_1
+	}
+	type Node2 struct {
+		D1 *Node2_1
+	}
+
+	c := NewContainer()
+	defer c.Close()
+	c.RegisterServiceFactoryByObject(
+		(*Leaf)(nil),
+		func() *Leaf { return &Leaf{} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node1_1)(nil),
+		func(d1 *Leaf) *Node1_1 { return &Node1_1{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node2_1)(nil),
+		func(d1 *Node1_1) *Node2_1 { return &Node2_1{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node1)(nil),
+		func(d1 *Node1_1) *Node1 { return &Node1{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Node2)(nil),
+		func(d1 *Node2_1) *Node2 { return &Node2{D1: d1} },
+		true,
+	).RegisterServiceFactoryByObject(
+		(*Root)(nil),
+		func(dn1 *Node1, dn2 *Node2) *Root { return &Root{DN1: dn1, DN2: dn2} },
+		true,
+	)
+
+	noCycles, cycledService := c.CheckCycles()
+	if noCycles {
+		t.Logf("No cycles detected")
+	} else {
+		t.Errorf("False cycle detected: "+cycledService)
 	}
 }
 
